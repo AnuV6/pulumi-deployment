@@ -16,7 +16,6 @@ env:
   DOCKER_BUILD_CONTEXT: ./next-app
   DOCKERFILE_PATH: ./next-app/Dockerfile
   NODE_VERSION: '20.11.1'
-  AZ_CLI_VERSION: 2.51.0  # Specify a stable version that works with our authentication method
 
 jobs:
   build-and-push:
@@ -46,8 +45,6 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          version: latest
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -107,55 +104,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq curl
-
-      - name: Setup Azure CLI
-        run: |
-          echo "Installing Azure CLI version ${{ env.AZ_CLI_VERSION }}"
-          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
-          az version
-
-      - name: Login to Azure
-        run: |
-          # Clear any existing Azure CLI state
-          rm -rf ~/.azure
-          
-          # Create service principal credential file
-          echo '${{ secrets.AZURE_CREDENTIALS }}' > azure-credentials.json
-          
-          # Get values from the credentials file
-          CLIENT_ID=$(jq -r '.clientId' azure-credentials.json)
-          CLIENT_SECRET=$(jq -r '.clientSecret' azure-credentials.json)
-          TENANT_ID=$(jq -r '.tenantId' azure-credentials.json)
-          SUBSCRIPTION_ID=$(jq -r '.subscriptionId' azure-credentials.json)
-          
-          # Login with service principal
-          az login --service-principal \
-            --username "$CLIENT_ID" \
-            --password "$CLIENT_SECRET" \
-            --tenant "$TENANT_ID"
-          
-          # Set subscription
-          az account set --subscription "$SUBSCRIPTION_ID"
-          
-          # Verify login
-          az account show --query name -o tsv
-          
-          # Remove credentials file
-          rm azure-credentials.json
+      # Switch to Azure official login action
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          enable-AzPSSession: false
 
       - name: Verify Web Apps Exist
-        run: |
-          if ! az webapp show --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} > /dev/null 2>&1; then
-            echo "Frontend web app ${{ secrets.AZURE_WEBAPP_NAME_FE }} does not exist in resource group ${{ secrets.AZURE_RESOURCE_GROUP }}."
-            exit 1
-          fi
-          if ! az webapp show --name ${{ secrets.AZURE_WEBAPP_NAME_BE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} > /dev/null 2>&1; then
-            echo "Backend web app ${{ secrets.AZURE_WEBAPP_NAME_BE }} does not exist in resource group ${{ secrets.AZURE_RESOURCE_GROUP }}."
-            exit 1
-          fi
-          echo "Both web apps exist."
+        uses: azure/cli@v1
+        with:
+          inlineScript: |
+            if ! az webapp show --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} > /dev/null 2>&1; then
+              echo "Frontend web app ${{ secrets.AZURE_WEBAPP_NAME_FE }} does not exist in resource group ${{ secrets.AZURE_RESOURCE_GROUP }}."
+              exit 1
+            fi
+            if ! az webapp show --name ${{ secrets.AZURE_WEBAPP_NAME_BE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} > /dev/null 2>&1; then
+              echo "Backend web app ${{ secrets.AZURE_WEBAPP_NAME_BE }} does not exist in resource group ${{ secrets.AZURE_RESOURCE_GROUP }}."
+              exit 1
+            fi
+            echo "Both web apps exist."
 
       - name: Deploy to Azure Web App for Frontend
         uses: azure/webapps-deploy@v3
@@ -165,15 +133,17 @@ jobs:
           images: '${{ needs.build-and-push.outputs.image-tag-main }}'
 
       - name: Configure App Settings for Frontend
-        run: |
-          az webapp config appsettings set --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} --settings \
-            WEBSITES_ENABLE_APP_SERVICE_STORAGE=false \
-            WEBSITES_PORT=${{ env.CONTAINER_PORT }} \
-            NEXT_PUBLIC_API_URL=https://${{ secrets.AZURE_WEBAPP_NAME_BE }}.azurewebsites.net \
-            NODE_ENV=production \
-            NEXT_TELEMETRY_DISABLED=1 \
-            WEBSITE_CONTAINER_START_TIME_LIMIT=600 \
-            WEBSITES_CONTAINER_START_TIME_LIMIT=600
+        uses: azure/cli@v1
+        with:
+          inlineScript: |
+            az webapp config appsettings set --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} --settings \
+              WEBSITES_ENABLE_APP_SERVICE_STORAGE=false \
+              WEBSITES_PORT=${{ env.CONTAINER_PORT }} \
+              NEXT_PUBLIC_API_URL=https://${{ secrets.AZURE_WEBAPP_NAME_BE }}.azurewebsites.net \
+              NODE_ENV=production \
+              NEXT_TELEMETRY_DISABLED=1 \
+              WEBSITE_CONTAINER_START_TIME_LIMIT=600 \
+              WEBSITES_CONTAINER_START_TIME_LIMIT=600
 
       - name: Deploy to Azure Web App for Backend
         uses: azure/webapps-deploy@v3
@@ -183,15 +153,17 @@ jobs:
           images: '${{ needs.build-and-push.outputs.image-tag-main }}'
 
       - name: Configure App Settings for Backend
-        run: |
-          az webapp config appsettings set --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --name ${{ secrets.AZURE_WEBAPP_NAME_BE }} --settings \
-            WEBSITES_ENABLE_APP_SERVICE_STORAGE=false \
-            WEBSITES_PORT=${{ env.CONTAINER_PORT }} \
-            DATABASE_URL="${{ secrets.DATABASE_URL }}" \
-            NODE_ENV=production \
-            NEXT_TELEMETRY_DISABLED=1 \
-            WEBSITE_CONTAINER_START_TIME_LIMIT=600 \
-            WEBSITES_CONTAINER_START_TIME_LIMIT=600
+        uses: azure/cli@v1
+        with:
+          inlineScript: |
+            az webapp config appsettings set --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --name ${{ secrets.AZURE_WEBAPP_NAME_BE }} --settings \
+              WEBSITES_ENABLE_APP_SERVICE_STORAGE=false \
+              WEBSITES_PORT=${{ env.CONTAINER_PORT }} \
+              DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+              NODE_ENV=production \
+              NEXT_TELEMETRY_DISABLED=1 \
+              WEBSITE_CONTAINER_START_TIME_LIMIT=600 \
+              WEBSITES_CONTAINER_START_TIME_LIMIT=600
 
       - name: Wait for services to start
         run: |
@@ -234,14 +206,18 @@ jobs:
           echo "✅ All health checks passed!"
 
       - name: Restart Frontend Web App
-        run: |
-          echo "Restarting frontend web app..."
-          az webapp restart --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }}
+        uses: azure/cli@v1
+        with:
+          inlineScript: |
+            echo "Restarting frontend web app..."
+            az webapp restart --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }}
 
       - name: Restart Backend Web App
-        run: |
-          echo "Restarting backend web app..."
-          az webapp restart --name ${{ secrets.AZURE_WEBAPP_NAME_BE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }}
+        uses: azure/cli@v1
+        with:
+          inlineScript: |
+            echo "Restarting backend web app..."
+            az webapp restart --name ${{ secrets.AZURE_WEBAPP_NAME_BE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }}
 
       - name: Deployment Summary
         run: |
