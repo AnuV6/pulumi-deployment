@@ -1,10 +1,9 @@
 # Stage 1: Dependencies
-FROM node:18.17.1-alpine3.18 AS deps
+FROM node:20.11.1-alpine3.19 AS deps
 WORKDIR /app
 
 # Install dependencies required for node-gyp and development
-RUN apk add --no-cache python3 make g++ \
-    && npm install -g npm@latest
+RUN apk add --no-cache python3 make g++
 
 # Copy package files
 COPY package*.json ./
@@ -13,7 +12,7 @@ COPY package*.json ./
 RUN npm ci
 
 # Stage 2: Builder
-FROM node:18.17.1-alpine3.18 AS builder
+FROM node:20.11.1-alpine3.19 AS builder
 WORKDIR /app
 
 # Copy dependencies first for better caching
@@ -37,7 +36,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # Stage 3: Runner
-FROM node:18.17.1-alpine3.18 AS runner
+FROM node:20.11.1-alpine3.19 AS runner
 WORKDIR /app
 
 # Set runtime environment variables
