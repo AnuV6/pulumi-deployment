@@ -3,13 +3,14 @@ FROM node:20.11.1-alpine3.19 AS deps
 WORKDIR /app
 
 # Install dependencies required for node-gyp and development
-RUN apk add --no-cache python3 make g++
+RUN apk add --no-cache python3 make g++ && \
+    npm config set engine-strict false
 
 # Copy package files
 COPY package*.json ./
 
 # Install ALL dependencies (including devDependencies for build)
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 
 # Stage 2: Builder
 FROM node:20.11.1-alpine3.19 AS builder
