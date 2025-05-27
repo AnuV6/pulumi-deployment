@@ -9,9 +9,16 @@ RUN npm ci --legacy-peer-deps
 FROM node:18-alpine AS builder
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
+# Copy specific directories and files
+COPY src ./src
+COPY public ./public
+COPY next.config.js ./
+COPY next.config.ts ./
+COPY tsconfig.json ./
+COPY package.json ./
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+
+# Build the application
 RUN npm run build
 
 # Stage 3: Production image
@@ -42,12 +49,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
 CMD ["npm", "start"]
-# Expose port
-EXPOSE 3000
 
-# Health check - using the health API endpoint
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
-
-# Start the application
-CMD ["npm", "start"]
