@@ -170,9 +170,9 @@ jobs:
               DOCKER_REGISTRY_SERVER_URL=https://${{ env.REGISTRY }} \
               DOCKER_CUSTOM_IMAGE_NAME=${{ needs.build-and-push.outputs.image-tag-main }}
             
-            # Set a custom startup command for the container
+            # Use npm start as the startup command
             az webapp config set --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --name ${{ secrets.AZURE_WEBAPP_NAME_BE }} \
-              --startup-file "/app/node_modules/.bin/next start -p 3000"
+              --startup-file "npm start"
 
       - name: Wait for backend to start
         run: |
@@ -210,9 +210,9 @@ jobs:
               DOCKER_REGISTRY_SERVER_URL=https://${{ env.REGISTRY }} \
               DOCKER_CUSTOM_IMAGE_NAME=${{ needs.build-and-push.outputs.image-tag-main }}
             
-            # Set a custom startup command for the container
+            # Use npm start as the startup command
             az webapp config set --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} \
-              --startup-file "/app/node_modules/.bin/next start -p 3000"
+              --startup-file "npm start"
 
       - name: Wait for services to start
         run: |
@@ -272,24 +272,4 @@ jobs:
           
           echo "🔍 Debug information for troubleshooting:"
           echo "- Check Azure Portal for container logs"
-          echo "- Verify your Next.js application has proper startup commands"
-          echo "- Ensure CONTAINER_PORT and WEBSITES_PORT match your application's listening port"
-
-      - name: Deployment Summary
-        run: |
-          echo "🚀 **Deployment Completed!**"
-          echo ""
-          echo "**Deployed Services:**"
-          echo "- Frontend: https://${{ secrets.AZURE_WEBAPP_NAME_FE }}.azurewebsites.net"
-          echo "- Backend: https://${{ secrets.AZURE_WEBAPP_NAME_BE }}.azurewebsites.net"
-          echo ""
-          echo "**Image:** ${{ needs.build-and-push.outputs.image-tag-main }}"
-          echo "**Commit:** ${{ github.sha }}"
-          echo "**Deployed by:** ${{ github.actor }}"
-          echo ""
-          echo "**Troubleshooting:**"
-          echo "If you see 'App Error', check:"
-          echo "1. Container logs in Azure Portal"
-          echo "2. Dockerfile's EXPOSE port matches WEBSITES_PORT"
-          echo "3. Application is properly listening on the configured port"
-          echo "4. Application's startup command in Dockerfile is correct"
+          echo "- Verify your Next.js application has proper

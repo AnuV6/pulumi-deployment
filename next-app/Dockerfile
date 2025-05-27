@@ -1,78 +1,34 @@
-# Stage 1: Dependencies
-FROM node:20.11.1-alpine3.19 AS deps
+# Use the official Node.js image as base
+FROM node:20.11-alpine AS base
+
+# Set working directory 
 WORKDIR /app
 
-# Verify Node.js version
-RUN node -v && npm -v
+# Copy package.json and package-lock.json to leverage Docker cache
+COPY package.json package-lock.json* ./
 
-# Configure npm
-RUN npm config set engine-strict false && \
-    npm config set registry https://registry.npmjs.org/
+# Install dependencies
+RUN npm ci
 
-# Copy package files
-COPY package*.json ./
-
-# Clean npm cache and install dependencies
-RUN npm cache clean --force && \
-    npm install --legacy-peer-deps
-
-# Stage 2: Builder
-FROM node:20.11.1-alpine3.19 AS builder
-WORKDIR /app
-
-# Verify Node.js version in builder
-RUN node -v && npm -v
-
-# Copy package files first for better layer caching
-COPY package*.json ./
-COPY --from=deps /app/node_modules ./node_modules
-
-# Copy project files
+# Copy the rest of the application code
 COPY . .
 
-# Set build-time variables
-ARG NODE_ENV=production
-ENV NODE_ENV=${NODE_ENV}
-ENV NEXT_TELEMETRY_DISABLED=1
-
-# Build the application with standalone output
+# Build the Next.js app
 RUN npm run build
 
-# Stage 3: Runner
-FROM node:20.11.1-alpine3.19 AS runner
-WORKDIR /app
+# Verify that the next binary exists and print its path
+RUN ls -la node_modules/.bin/ && \
+    which node && \
+    echo "NODE_PATH: $NODE_PATH" && \
+    npm list -g
 
-# Set runtime environment variables
-ENV NODE_ENV=production
-ENV PORT=3000
-ENV NEXT_TELEMETRY_DISABLED=1
-
-# Install only production dependencies
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/next.config.js ./next.config.js
-COPY --from=builder /app/next.config.ts ./next.config.ts
-
-# Create non-root user and set permissions
-RUN addgroup --system --gid 1001 nodejs \
-    && adduser --system --uid 1001 nextjs \
-    && chown -R nextjs:nodejs /app \
-    && chmod -R 500 /app \
-    && chmod -R 400 /app/.next \
-    && chmod -R 400 /app/node_modules
-
-# Switch to non-root user
-USER nextjs
-
-# Expose port
+# Expose the port the app will run on
 EXPOSE 3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
+# Set environment variables
+ENV NODE_ENV productionENV NODE_ENV production
+ENV PORT 3000
 
-# Start command
-CMD ["node_modules/.bin/next", "start", "-p", "3000"]
+# Use a more reliable approach with direct node command# Use a more reliable approach with direct node command
+CMD ["npm", "start"]
 
