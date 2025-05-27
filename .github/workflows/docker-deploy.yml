@@ -85,6 +85,12 @@ jobs:
           provenance: false
           sbom: false
 
+      - name: Debug Docker Build
+        if: always()
+        run: |
+          echo "Image build output:"
+          echo "${{ steps.build.outputs.metadata }}"
+
       - name: Get main image tag
         id: get-main-tag
         run: |
@@ -163,6 +169,10 @@ jobs:
               PORT=${{ env.CONTAINER_PORT }} \
               DOCKER_REGISTRY_SERVER_URL=https://${{ env.REGISTRY }} \
               DOCKER_CUSTOM_IMAGE_NAME=${{ needs.build-and-push.outputs.image-tag-main }}
+            
+            # Set a custom startup command for the container
+            az webapp config set --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --name ${{ secrets.AZURE_WEBAPP_NAME_BE }} \
+              --startup-file "/app/node_modules/.bin/next start -p 3000"
 
       - name: Wait for backend to start
         run: |
@@ -199,6 +209,10 @@ jobs:
               PORT=${{ env.CONTAINER_PORT }} \
               DOCKER_REGISTRY_SERVER_URL=https://${{ env.REGISTRY }} \
               DOCKER_CUSTOM_IMAGE_NAME=${{ needs.build-and-push.outputs.image-tag-main }}
+            
+            # Set a custom startup command for the container
+            az webapp config set --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} \
+              --startup-file "/app/node_modules/.bin/next start -p 3000"
 
       - name: Wait for services to start
         run: |

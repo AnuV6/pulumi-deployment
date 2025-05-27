@@ -74,5 +74,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
 # Start command
-CMD ["npm", "start"]
+CMD ["node_modules/.bin/next", "start", "-p", "3000"]
 
