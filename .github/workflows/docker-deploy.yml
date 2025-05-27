@@ -56,6 +56,11 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Verify files
+        run: |
+          ls -la next-app/
+          ls -la next-app/pages/ || echo "No pages directory found"
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
