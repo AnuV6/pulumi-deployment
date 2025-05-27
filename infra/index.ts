@@ -79,7 +79,6 @@ const sqlDatabase = new sql.Database("sqldb", {
     },
     maxSizeBytes: 2147483648, // 2 GB
     collation: "SQL_Latin1_General_CP1_CI_AS", // Default collation
-    sampleName: "AdventureWorksLT", // Add sample database
 });
 
 // Allow Azure services to access the SQL server
