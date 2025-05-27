@@ -106,37 +106,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Login to Azure
-        uses: azure/login@v2
+      # Azure login will be handled by Deployment Center
+      - name: 'Deploy to Azure Web App'
+        uses: azure/webapps-deploy@v3
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Check if Frontend Azure Web App exists
-        id: check-fe-app-exists
-        continue-on-error: true
-        uses: azure/CLI@v2
-        with:
-          azcliversion: 2.53.0
-          inlineScript: |
-            echo "Checking if frontend web app exists..."
-            echo "Web App Name: ${{ secrets.AZURE_WEBAPP_NAME_FE }}"
-            echo "Resource Group: ${{ secrets.AZURE_RESOURCE_GROUP }}"
-            
-            # First, check if the resource group exists
-            if ! az group show --name "${{ secrets.AZURE_RESOURCE_GROUP }}" --output none 2>/dev/null; then
-              echo "Resource group ${{ secrets.AZURE_RESOURCE_GROUP }} does not exist"
-              echo "fe-exists=false" >> $GITHUB_OUTPUT
-              exit 0
-            fi
-            
-            # Then check if the web app exists
-            if az webapp show --name "${{ secrets.AZURE_WEBAPP_NAME_FE }}" --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" --output none 2>/dev/null; then
-              echo "Frontend web app exists"
-              echo "fe-exists=true" >> $GITHUB_OUTPUT
-            else
-              echo "Frontend web app does not exist"
-              echo "fe-exists=false" >> $GITHUB_OUTPUT
-            fi
+          app-name: ${{ secrets.AZURE_WEBAPP_NAME_FE }}
+          slot-name: 'production'
+          package: ${{ github.workspace }}/next-app
+          runtime-stack: 'NODE|20-lts'
+          start-up-command: 'npm start'
+          
+      # Optional: Add a health check
+      - name: Verify deployment
+        run: |
+          sleep 30  # Give time for the app to start
+          curl -sSf https://${{ secrets.AZURE_WEBAPP_NAME_FE }}.azurewebsites.net
 
       - name: Check if Backend Azure Web App exists
         id: check-be-app-exists
