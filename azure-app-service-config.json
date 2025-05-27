@@ -1,0 +1,18 @@
+{
+  "linuxFxVersion": "DOCKER|${CONTAINER_IMAGE}",
+  "appCommandLine": "",
+  "alwaysOn": true,
+  "http20Enabled": true,
+  "httpLoggingEnabled": true,
+  "logsDirectorySizeLimit": 35,
+  "detailedErrorLoggingEnabled": true,
+  "requestTracingEnabled": true,
+  "webSocketsEnabled": true,
+  "cors": {
+    "allowedOrigins": [
+      "https://${AZURE_WEBAPP_NAME_FE}.azurewebsites.net",
+      "https://${AZURE_WEBAPP_NAME_BE}.azurewebsites.net"
+    ]
+  },
+  "healthCheckPath": "/api/health"
+}

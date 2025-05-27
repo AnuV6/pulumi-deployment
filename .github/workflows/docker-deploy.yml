@@ -6,12 +6,14 @@ on:
     paths:
       - 'next-app/**'
       - '.github/workflows/docker-deploy.yml'
+      - 'Dockerfile'
   workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/next-app
+  IMAGE_NAME: ${{ github.repository }}
   CONTAINER_PORT: 3000
+  DOCKER_BUILD_CONTEXT: .  # Changed to use root directory for multi-stage builds
 
 jobs:
   build-and-push:
@@ -41,15 +43,21 @@ jobs:
             type=sha,format=long
             type=ref,event=branch
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
-          context: ./next-app
+          context: ${{ env.DOCKER_BUILD_CONTEXT }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            NODE_ENV=production
+          platforms: linux/amd64,linux/arm64
 
   deploy:
     name: Deploy to Azure Web Apps
@@ -72,7 +80,24 @@ jobs:
           app-name: ${{ vars.AZURE_WEBAPP_NAME_FE || 'your-fe-app-name' }}
           slot-name: 'production'
           images: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}'
-          configuration-file: './next-app/azure-app-service-config.json'
+          configuration-file: './azure-app-service-config.json'
+          startup-command: 'npm start'
+
+      - name: Configure App Settings for Frontend
+        uses: azure/appservice-settings@v1
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME_FE || 'your-fe-app-name' }}
+          app-settings-json: |
+            [
+              {
+                "name": "NEXT_PUBLIC_API_URL",
+                "value": "https://${{ vars.AZURE_WEBAPP_NAME_BE || 'your-be-app-name' }}.azurewebsites.net"
+              },
+              {
+                "name": "NODE_ENV",
+                "value": "production"
+              }
+            ]
 
       - name: Deploy to Azure Web App for Backend
         uses: azure/webapps-deploy@v2
@@ -80,4 +105,21 @@ jobs:
           app-name: ${{ vars.AZURE_WEBAPP_NAME_BE || 'your-be-app-name' }}
           slot-name: 'production'
           images: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}'
-          configuration-file: './next-app/azure-app-service-config.json'
+          configuration-file: './azure-app-service-config.json'
+          startup-command: 'npm run start:backend'
+
+      - name: Configure App Settings for Backend
+        uses: azure/appservice-settings@v1
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME_BE || 'your-be-app-name' }}
+          app-settings-json: |
+            [
+              {
+                "name": "DATABASE_URL",
+                "value": "${{ secrets.DATABASE_URL }}"
+              },
+              {
+                "name": "NODE_ENV",
+                "value": "production"
+              }
+            ]
