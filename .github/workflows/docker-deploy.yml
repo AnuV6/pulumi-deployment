@@ -265,11 +265,3 @@ jobs:
               echo "⚠️ $name is responding with HTTP $STATUS - may need investigation"
             fi
           }
-          
-          # Check both services without failing the pipeline
-          check_basic_endpoint "https://${{ secrets.AZURE_WEBAPP_NAME_FE }}.azurewebsites.net" "Frontend"
-          check_basic_endpoint "https://${{ secrets.AZURE_WEBAPP_NAME_BE }}.azurewebsites.net" "Backend"
-          
-          echo "🔍 Debug information for troubleshooting:"
-          echo "- Check Azure Portal for container logs"
-          echo "- Verify your Next.js application has proper
