@@ -49,7 +49,7 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
       
       - name: Deploy infrastructure changes
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/master'
         run: pulumi up --yes
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
