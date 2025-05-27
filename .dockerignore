@@ -42,13 +42,13 @@ README.md
 Dockerfile*
 docker-compose*
 **/dist
-**/build
 
-# Ignore everything in the root except next-app
-*/
-!next-app/
-
-# Then ignore specific files in next-app
+# Only include necessary files from next-app
 next-app/.next
 next-app/node_modules
 next-app/out
+!next-app/pages
+!next-app/public
+!next-app/src
+!next-app/next.config.*
+!next-app/package*.json
