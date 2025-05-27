@@ -1,52 +1,76 @@
-# Stage 1: Install dependencies only when needed
-FROM node:18-alpine AS deps
+# Stage 1: Dependencies
+FROM node:18.17.1-alpine3.18 AS deps
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
-RUN npm install --verbose
+# Install dependencies required for node-gyp and development
+RUN apk add --no-cache python3 make g++ \
+    && npm install -g npm@latest
 
-# Stage 2: Build the application
-FROM node:18-alpine AS builder
+# Copy package files
+COPY package*.json ./
+
+# Install ALL dependencies (including devDependencies for build)
+RUN npm ci
+
+# Stage 2: Builder
+FROM node:18.17.1-alpine3.18 AS builder
 WORKDIR /app
 
-# Copy specific directories and files
-COPY src ./src
-COPY public ./public
+# Copy dependencies first for better caching
+COPY --from=deps /app/node_modules ./node_modules
+COPY package*.json ./
+
+# Copy project files
+COPY tsconfig.json ./
 COPY next.config.js ./
 COPY next.config.ts ./
-COPY tsconfig.json ./
-COPY package.json ./
-COPY --from=deps /app/node_modules ./node_modules
+COPY eslint.config.mjs ./
+COPY public ./public
+COPY app ./app
 
-# Build the application
+# Set build-time variables
+ARG NODE_ENV=production
+ENV NODE_ENV=${NODE_ENV}
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Build the application with standalone output
 RUN npm run build
 
-# Stage 3: Production image
-FROM node:18-alpine AS runner
+# Stage 3: Runner
+FROM node:18.17.1-alpine3.18 AS runner
 WORKDIR /app
 
+# Set runtime environment variables
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV NEXT_TELEMETRY_DISABLED=1
 
-# Only copy the necessary files for production
-COPY --from=builder /app/public ./public
+# Install only production dependencies
+COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/next.config.js ./
-COPY --from=builder /app/next.config.ts ./
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/next.config.js ./next.config.js
+COPY --from=builder /app/next.config.ts ./next.config.ts
 
-# Create non-root user for security
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nextjs -u 1001 && \
-    chown -R nextjs:nodejs /app
+# Create non-root user and set permissions
+RUN addgroup --system --gid 1001 nodejs \
+    && adduser --system --uid 1001 nextjs \
+    && chown -R nextjs:nodejs /app \
+    && chmod -R 500 /app \
+    && chmod -R 400 /app/.next \
+    && chmod -R 400 /app/node_modules
 
+# Switch to non-root user
 USER nextjs
 
+# Expose port
 EXPOSE 3000
 
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
+# Start command
 CMD ["npm", "start"]
 
