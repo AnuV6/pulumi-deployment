@@ -88,15 +88,14 @@ jobs:
           echo "main-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
           echo "Using image: ${IMAGE_TAG}"
 
-  # Deploy to production with manual approval
   deploy-production:
     name: Deploy to Production
     needs: build-and-push
     runs-on: ubuntu-latest
-    environment: production  # This requires manual approval
+    environment: production
     concurrency: 
       group: production-deployment
-      cancel-in-progress: false  # Don't cancel production deployments
+      cancel-in-progress: false
 
     permissions:
       id-token: write
@@ -106,21 +105,31 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Azure login will be handled by Deployment Center
-      - name: 'Deploy to Azure Web App'
-        uses: azure/webapps-deploy@v3
+      - name: Login to Azure
+        uses: azure/login@v2
         with:
-          app-name: ${{ secrets.AZURE_WEBAPP_NAME_FE }}
-          slot-name: 'production'
-          package: ${{ github.workspace }}/next-app
-          runtime-stack: 'NODE|20-lts'
-          start-up-command: 'npm start'
-          
-      # Optional: Add a health check
-      - name: Verify deployment
-        run: |
-          sleep 30  # Give time for the app to start
-          curl -sSf https://${{ secrets.AZURE_WEBAPP_NAME_FE }}.azurewebsites.net
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Check if Frontend Azure Web App exists
+        id: check-fe-app-exists
+        continue-on-error: true
+        uses: azure/CLI@v2
+        with:
+          azcliversion: 2.53.0
+          inlineScript: |
+            if az webapp show --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} > /dev/null 2>&1; then
+              echo "fe-exists=true" >> $GITHUB_OUTPUT
+            else
+              echo "fe-exists=false" >> $GITHUB_OUTPUT
+            fi
+
+      - name: Create Frontend Azure Web App if not exists
+        if: steps.check-fe-app-exists.outputs.fe-exists != 'true'
+        uses: azure/CLI@v2
+        with:
+          azcliversion: 2.53.0
+          inlineScript: |
+            az webapp create --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --plan ${{ secrets.AZURE_APP_SERVICE_PLAN }} --runtime "NODE|20-lts"
 
       - name: Check if Backend Azure Web App exists
         id: check-be-app-exists
@@ -135,8 +144,15 @@ jobs:
               echo "be-exists=false" >> $GITHUB_OUTPUT
             fi
 
+      - name: Create Backend Azure Web App if not exists
+        if: steps.check-be-app-exists.outputs.be-exists != 'true'
+        uses: azure/CLI@v2
+        with:
+          azcliversion: 2.53.0
+          inlineScript: |
+            az webapp create --name ${{ secrets.AZURE_WEBAPP_NAME_BE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --plan ${{ secrets.AZURE_APP_SERVICE_PLAN }} --runtime "NODE|20-lts"
+
       - name: Deploy to Azure Web App for Frontend
-        if: steps.check-fe-app-exists.outputs.fe-exists == 'true'
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME_FE }}
@@ -144,7 +160,6 @@ jobs:
           images: '${{ needs.build-and-push.outputs.image-tag-main }}'
 
       - name: Configure App Settings for Frontend
-        if: steps.check-fe-app-exists.outputs.fe-exists == 'true'
         uses: azure/appservice-settings@v1
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME_FE }}
@@ -174,7 +189,6 @@ jobs:
             ]
 
       - name: Deploy to Azure Web App for Backend
-        if: steps.check-be-app-exists.outputs.be-exists == 'true'
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME_BE }}
@@ -182,7 +196,6 @@ jobs:
           images: '${{ needs.build-and-push.outputs.image-tag-main }}'
 
       - name: Configure App Settings for Backend
-        if: steps.check-be-app-exists.outputs.be-exists == 'true'
         uses: azure/appservice-settings@v1
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME_BE }}
@@ -214,23 +227,21 @@ jobs:
       - name: Run Health Check
         run: |
           echo "🔍 Running post-deployment health checks..."
-          
-          # Check Frontend Health
+          if [ "${{ steps.check-fe-app-exists.outputs.fe-exists }}" != "true" ] && [ "${{ steps.check-be-app-exists.outputs.be-exists }}" != "true" ]; then
+            echo "❌ No web apps available for health checks."
+            exit 1
+          fi
           if [ "${{ steps.check-fe-app-exists.outputs.fe-exists }}" == "true" ]; then
             echo "Checking frontend health..."
             curl -f https://${{ secrets.AZURE_WEBAPP_NAME_FE }}.azurewebsites.net/api/health || exit 1
           fi
-          
-          # Check Backend Health  
           if [ "${{ steps.check-be-app-exists.outputs.be-exists }}" == "true" ]; then
             echo "Checking backend health..."
             curl -f https://${{ secrets.AZURE_WEBAPP_NAME_BE }}.azurewebsites.net/api/health || exit 1
           fi
-          
           echo "✅ All health checks passed!"
 
       - name: Restart Frontend Web App
-        if: steps.check-fe-app-exists.outputs.fe-exists == 'true'
         uses: azure/CLI@v2
         with:
           azcliversion: 2.53.0
@@ -238,7 +249,6 @@ jobs:
             az webapp restart --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }}
 
       - name: Restart Backend Web App
-        if: steps.check-be-app-exists.outputs.be-exists == 'true'
         uses: azure/CLI@v2
         with:
           azcliversion: 2.53.0
@@ -250,12 +260,8 @@ jobs:
           echo "🚀 **Production Deployment Completed Successfully!**"
           echo ""
           echo "**Deployed Services:**"
-          if [ "${{ steps.check-fe-app-exists.outputs.fe-exists }}" == "true" ]; then
-            echo "- Frontend: https://${{ secrets.AZURE_WEBAPP_NAME_FE }}.azurewebsites.net"
-          fi
-          if [ "${{ steps.check-be-app-exists.outputs.be-exists }}" == "true" ]; then
-            echo "- Backend: https://${{ secrets.AZURE_WEBAPP_NAME_BE }}.azurewebsites.net"
-          fi
+          echo "- Frontend: https://${{ secrets.AZURE_WEBAPP_NAME_FE }}.azurewebsites.net"
+          echo "- Backend: https://${{ secrets.AZURE_WEBAPP_NAME_BE }}.azurewebsites.net"
           echo ""
           echo "**Image:** ${{ needs.build-and-push.outputs.image-tag-main }}"
           echo "**Commit:** ${{ github.sha }}"
