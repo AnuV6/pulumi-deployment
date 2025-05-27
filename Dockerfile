@@ -4,13 +4,12 @@ FROM node:18-alpine AS builder
 # Set working directory
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy only necessary files for dependency installation
 COPY next-app/package*.json ./next-app/
 
 # Install dependencies
 WORKDIR /app/next-app
-RUN npm install --legacy-peer-deps
+RUN npm install --legacy-peer-deps --no-audit --prefer-offline
 
 # Copy source code
 COPY . .
@@ -22,9 +21,9 @@ RUN npm run build
 FROM node:18-alpine
 WORKDIR /app
 
-# Copy built assets from builder
+# Copy only necessary files
 COPY --from=builder /app/next-app/next.config.js .
-COPY --from=builder /app/next-app/package*.json ./
+COPY --from=builder /app/next-app/package.json ./
 COPY --from=builder /app/next-app/public ./public
 COPY --from=builder /app/next-app/.next ./.next
 COPY --from=builder /app/next-app/node_modules ./node_modules

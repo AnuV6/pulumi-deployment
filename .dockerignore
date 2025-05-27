@@ -1,5 +1,5 @@
 # Dependency directories
-node_modules
+**/node_modules
 .next
 
 # Build output
@@ -15,7 +15,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Local development
+# Git
 .git
 .gitignore
 
@@ -37,11 +37,18 @@ yarn-error.log*
 ehthumbs.db
 Thumbs.db
 
-# Project specific
+# Project files
 README.md
 Dockerfile*
 docker-compose*
-**/node_modules
 **/dist
 **/build
-**/.next
+
+# Ignore everything in the root except next-app
+*/
+!next-app/
+
+# Then ignore specific files in next-app
+next-app/.next
+next-app/node_modules
+next-app/out
