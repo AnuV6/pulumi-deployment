@@ -3,7 +3,7 @@ name: deploy-infra
 on:
   push:
     branches:
-      - main
+      - master
     paths:
       - 'infra/**'
   workflow_dispatch:
