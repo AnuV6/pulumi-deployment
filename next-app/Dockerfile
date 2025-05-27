@@ -3,7 +3,7 @@ FROM node:18-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-RUN npm ci --legacy-peer-deps
+RUN npm install --verbose
 
 # Stage 2: Build the application
 FROM node:18-alpine AS builder
