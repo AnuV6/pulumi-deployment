@@ -22,7 +22,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Verify files are in place
-RUN ls -la /app/src/app
+RUN ls -la /app/src/app/api
 
 # Build the application
 RUN npm run build
@@ -53,9 +53,9 @@ USER nextjs
 # Expose port
 EXPOSE 3000
 
-# Health check
+# Health check - using the health API endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
 # Start the application
 CMD ["npm", "start"]
