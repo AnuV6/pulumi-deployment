@@ -83,20 +83,14 @@ jobs:
       - name: Get main image tag
         id: get-main-tag
         run: |
-          # Get the first tag from the metadata output
           IMAGE_TAG=$(echo '${{ steps.meta.outputs.tags }}' | head -n1)
           echo "main-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
           echo "Using image: ${IMAGE_TAG}"
 
-  deploy-production:
-    name: Deploy to Production
+  deploy:
+    name: Deploy to Azure
     needs: build-and-push
     runs-on: ubuntu-latest
-    environment: production
-    concurrency: 
-      group: production-deployment
-      cancel-in-progress: false
-
     permissions:
       id-token: write
       contents: read
@@ -105,52 +99,47 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Check if Frontend Azure Web App exists
-        id: check-fe-app-exists
-        continue-on-error: true
+      - name: Set Azure Subscription
         uses: azure/CLI@v2
         with:
           azcliversion: 2.53.0
           inlineScript: |
-            if az webapp show --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} > /dev/null 2>&1; then
-              echo "fe-exists=true" >> $GITHUB_OUTPUT
-            else
-              echo "fe-exists=false" >> $GITHUB_OUTPUT
+            SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')
+            az account set --subscription $SUBSCRIPTION_ID || { echo "Failed to set subscription"; exit 1; }
+            echo "Set subscription to $(az account show --query 'name' -o tsv)"
+
+      - name: Debug Azure Context
+        uses: azure/CLI@v2
+        with:
+          azcliversion: 2.53.0
+          inlineScript: |
+            echo "Current subscription: $(az account show --query '{name:name, id:id}' -o json)"
+            echo "Current tenant: $(az account show --query 'tenantId' -o tsv)"
+            echo "Service principal permissions:"
+            az role assignment list --assignee $(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId') --query "[].{role:roleDefinitionName, scope:scope}" -o table
+
+      - name: Verify Web Apps Exist
+        uses: azure/CLI@v2
+        with:
+          azcliversion: 2.53.0
+          inlineScript: |
+            if ! az webapp show --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} > /dev/null 2>&1; then
+              echo "Frontend web app ${{ secrets.AZURE_WEBAPP_NAME_FE }} does not exist in resource group ${{ secrets.AZURE_RESOURCE_GROUP }}."
+              exit 1
             fi
-
-      - name: Create Frontend Azure Web App if not exists
-        if: steps.check-fe-app-exists.outputs.fe-exists != 'true'
-        uses: azure/CLI@v2
-        with:
-          azcliversion: 2.53.0
-          inlineScript: |
-            az webapp create --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --plan ${{ secrets.AZURE_APP_SERVICE_PLAN }} --runtime "NODE|20-lts"
-
-      - name: Check if Backend Azure Web App exists
-        id: check-be-app-exists
-        continue-on-error: true
-        uses: azure/CLI@v2
-        with:
-          azcliversion: 2.53.0
-          inlineScript: |
-            if az webapp show --name ${{ secrets.AZURE_WEBAPP_NAME_BE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} > /dev/null 2>&1; then
-              echo "be-exists=true" >> $GITHUB_OUTPUT
-            else
-              echo "be-exists=false" >> $GITHUB_OUTPUT
+            if ! az webapp show --name ${{ secrets.AZURE_WEBAPP_NAME_BE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} > /dev/null 2>&1; then
+              echo "Backend web app ${{ secrets.AZURE_WEBAPP_NAME_BE }} does not exist in resource group ${{ secrets.AZURE_RESOURCE_GROUP }}."
+              exit 1
             fi
-
-      - name: Create Backend Azure Web App if not exists
-        if: steps.check-be-app-exists.outputs.be-exists != 'true'
-        uses: azure/CLI@v2
-        with:
-          azcliversion: 2.53.0
-          inlineScript: |
-            az webapp create --name ${{ secrets.AZURE_WEBAPP_NAME_BE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --plan ${{ secrets.AZURE_APP_SERVICE_PLAN }} --runtime "NODE|20-lts"
+            echo "Both web apps exist."
 
       - name: Deploy to Azure Web App for Frontend
         uses: azure/webapps-deploy@v3
@@ -227,18 +216,10 @@ jobs:
       - name: Run Health Check
         run: |
           echo "🔍 Running post-deployment health checks..."
-          if [ "${{ steps.check-fe-app-exists.outputs.fe-exists }}" != "true" ] && [ "${{ steps.check-be-app-exists.outputs.be-exists }}" != "true" ]; then
-            echo "❌ No web apps available for health checks."
-            exit 1
-          fi
-          if [ "${{ steps.check-fe-app-exists.outputs.fe-exists }}" == "true" ]; then
-            echo "Checking frontend health..."
-            curl -f https://${{ secrets.AZURE_WEBAPP_NAME_FE }}.azurewebsites.net/api/health || exit 1
-          fi
-          if [ "${{ steps.check-be-app-exists.outputs.be-exists }}" == "true" ]; then
-            echo "Checking backend health..."
-            curl -f https://${{ secrets.AZURE_WEBAPP_NAME_BE }}.azurewebsites.net/api/health || exit 1
-          fi
+          echo "Checking frontend health..."
+          curl -f https://${{ secrets.AZURE_WEBAPP_NAME_FE }}.azurewebsites.net/api/health || exit 1
+          echo "Checking backend health..."
+          curl -f https://${{ secrets.AZURE_WEBAPP_NAME_BE }}.azurewebsites.net/api/health || exit 1
           echo "✅ All health checks passed!"
 
       - name: Restart Frontend Web App
@@ -257,7 +238,7 @@ jobs:
 
       - name: Deployment Summary
         run: |
-          echo "🚀 **Production Deployment Completed Successfully!**"
+          echo "🚀 **Deployment Completed Successfully!**"
           echo ""
           echo "**Deployed Services:**"
           echo "- Frontend: https://${{ secrets.AZURE_WEBAPP_NAME_FE }}.azurewebsites.net"
