@@ -2,7 +2,7 @@ name: Build and Deploy with Docker
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]
     paths:
       - 'next-app/**'
       - '.github/workflows/docker-deploy.yml'
