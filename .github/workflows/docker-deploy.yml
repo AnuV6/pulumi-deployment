@@ -28,6 +28,7 @@ jobs:
     outputs:
       image-digest: ${{ steps.build.outputs.digest }}
       image-tags: ${{ steps.meta.outputs.tags }}
+      image-tag-main: ${{ steps.get-main-tag.outputs.main-tag }}
 
     steps:
       - name: Checkout repository
@@ -61,13 +62,6 @@ jobs:
             org.opencontainers.image.description=Next.js application
             org.opencontainers.image.vendor=${{ github.repository_owner }}
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: next-app/package-lock.json
-
       - name: Build and push Docker image
         id: build
         uses: docker/build-push-action@v5
@@ -86,12 +80,23 @@ jobs:
           provenance: false
           sbom: false
 
-  deploy:
-    name: Deploy to Azure Web Apps
+      - name: Get main image tag
+        id: get-main-tag
+        run: |
+          # Get the first tag from the metadata output
+          IMAGE_TAG=$(echo '${{ steps.meta.outputs.tags }}' | head -n1)
+          echo "main-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "Using image: ${IMAGE_TAG}"
+
+  # Deploy to production with manual approval
+  deploy-production:
+    name: Deploy to Production
     needs: build-and-push
     runs-on: ubuntu-latest
-    environment: ${{ vars.ENVIRONMENT_NAME || 'production' }}
-    concurrency: production_environment
+    environment: production  # This requires manual approval
+    concurrency: 
+      group: production-deployment
+      cancel-in-progress: false  # Don't cancel production deployments
 
     permissions:
       id-token: write
@@ -132,21 +137,13 @@ jobs:
               echo "be-exists=false" >> $GITHUB_OUTPUT
             fi
 
-      - name: Get image tag for deployment
-        id: get-image
-        run: |
-          # Get the first tag from the metadata output
-          IMAGE_TAG=$(echo '${{ needs.build-and-push.outputs.image-tags }}' | head -n1)
-          echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          echo "Using image: ${IMAGE_TAG}"
-
       - name: Deploy to Azure Web App for Frontend
         if: steps.check-fe-app-exists.outputs.fe-exists == 'true'
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME_FE }}
           slot-name: 'production'
-          images: '${{ steps.get-image.outputs.image-tag }}'
+          images: '${{ needs.build-and-push.outputs.image-tag-main }}'
 
       - name: Configure App Settings for Frontend
         if: steps.check-fe-app-exists.outputs.fe-exists == 'true'
@@ -184,7 +181,7 @@ jobs:
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME_BE }}
           slot-name: 'production'
-          images: '${{ steps.get-image.outputs.image-tag }}'
+          images: '${{ needs.build-and-push.outputs.image-tag-main }}'
 
       - name: Configure App Settings for Backend
         if: steps.check-be-app-exists.outputs.be-exists == 'true'
@@ -216,6 +213,24 @@ jobs:
               }
             ]
 
+      - name: Run Health Check
+        run: |
+          echo "🔍 Running post-deployment health checks..."
+          
+          # Check Frontend Health
+          if [ "${{ steps.check-fe-app-exists.outputs.fe-exists }}" == "true" ]; then
+            echo "Checking frontend health..."
+            curl -f https://${{ secrets.AZURE_WEBAPP_NAME_FE }}.azurewebsites.net/api/health || exit 1
+          fi
+          
+          # Check Backend Health  
+          if [ "${{ steps.check-be-app-exists.outputs.be-exists }}" == "true" ]; then
+            echo "Checking backend health..."
+            curl -f https://${{ secrets.AZURE_WEBAPP_NAME_BE }}.azurewebsites.net/api/health || exit 1
+          fi
+          
+          echo "✅ All health checks passed!"
+
       - name: Restart Frontend Web App
         if: steps.check-fe-app-exists.outputs.fe-exists == 'true'
         uses: azure/CLI@v2
@@ -231,3 +246,19 @@ jobs:
           azcliversion: 2.53.0
           inlineScript: |
             az webapp restart --name ${{ secrets.AZURE_WEBAPP_NAME_BE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }}
+
+      - name: Deployment Summary
+        run: |
+          echo "🚀 **Production Deployment Completed Successfully!**"
+          echo ""
+          echo "**Deployed Services:**"
+          if [ "${{ steps.check-fe-app-exists.outputs.fe-exists }}" == "true" ]; then
+            echo "- Frontend: https://${{ secrets.AZURE_WEBAPP_NAME_FE }}.azurewebsites.net"
+          fi
+          if [ "${{ steps.check-be-app-exists.outputs.be-exists }}" == "true" ]; then
+            echo "- Backend: https://${{ secrets.AZURE_WEBAPP_NAME_BE }}.azurewebsites.net"
+          fi
+          echo ""
+          echo "**Image:** ${{ needs.build-and-push.outputs.image-tag-main }}"
+          echo "**Commit:** ${{ github.sha }}"
+          echo "**Deployed by:** ${{ github.actor }}"
