@@ -2,9 +2,8 @@
 FROM node:20.11.1-alpine3.19 AS deps
 WORKDIR /app
 
-# Install dependencies required for node-gyp and development
-RUN apk add --no-cache python3 make g++ && \
-    npm config set engine-strict false
+# Configure npm
+RUN npm config set engine-strict false
 
 # Copy package files
 COPY package*.json ./
