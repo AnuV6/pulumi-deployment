@@ -118,9 +118,23 @@ jobs:
         with:
           azcliversion: 2.53.0
           inlineScript: |
-            if az webapp show --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} > /dev/null 2>&1; then
+            echo "Checking if frontend web app exists..."
+            echo "Web App Name: ${{ secrets.AZURE_WEBAPP_NAME_FE }}"
+            echo "Resource Group: ${{ secrets.AZURE_RESOURCE_GROUP }}"
+            
+            # First, check if the resource group exists
+            if ! az group show --name "${{ secrets.AZURE_RESOURCE_GROUP }}" --output none 2>/dev/null; then
+              echo "Resource group ${{ secrets.AZURE_RESOURCE_GROUP }} does not exist"
+              echo "fe-exists=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            
+            # Then check if the web app exists
+            if az webapp show --name "${{ secrets.AZURE_WEBAPP_NAME_FE }}" --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" --output none 2>/dev/null; then
+              echo "Frontend web app exists"
               echo "fe-exists=true" >> $GITHUB_OUTPUT
             else
+              echo "Frontend web app does not exist"
               echo "fe-exists=false" >> $GITHUB_OUTPUT
             fi
 
