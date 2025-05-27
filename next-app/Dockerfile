@@ -2,30 +2,33 @@
 FROM node:20.11.1-alpine3.19 AS deps
 WORKDIR /app
 
+# Verify Node.js version
+RUN node -v && npm -v
+
 # Configure npm
-RUN npm config set engine-strict false
+RUN npm config set engine-strict false && \
+    npm config set registry https://registry.npmjs.org/
 
 # Copy package files
 COPY package*.json ./
 
-# Install ALL dependencies (including devDependencies for build)
-RUN npm ci --legacy-peer-deps
+# Clean npm cache and install dependencies
+RUN npm cache clean --force && \
+    npm install --legacy-peer-deps
 
 # Stage 2: Builder
 FROM node:20.11.1-alpine3.19 AS builder
 WORKDIR /app
 
-# Copy dependencies first for better caching
-COPY --from=deps /app/node_modules ./node_modules
+# Verify Node.js version in builder
+RUN node -v && npm -v
+
+# Copy package files first for better layer caching
 COPY package*.json ./
+COPY --from=deps /app/node_modules ./node_modules
 
 # Copy project files
-COPY tsconfig.json ./
-COPY next.config.js ./
-COPY next.config.ts ./
-COPY eslint.config.mjs ./
-COPY public ./public
-COPY app ./app
+COPY . .
 
 # Set build-time variables
 ARG NODE_ENV=production
