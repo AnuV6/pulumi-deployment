@@ -1,0 +1,14 @@
+{
+  "name": "next-deployment",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "prepare": "cd next-app && npm install",
+    "build": "cd next-app && npm run build",
+    "start": "cd next-app && npm start",
+    "dev": "cd next-app && npm run dev"
+  },
+  "workspaces": [
+    "next-app"
+  ]
+}

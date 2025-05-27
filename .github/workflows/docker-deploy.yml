@@ -2,18 +2,18 @@ name: Build and Deploy with Docker
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
     paths:
-      - 'next-app/**'
-      - '.github/workflows/docker-deploy.yml'
-      - 'Dockerfile'
+      - '**'
+      - '!.github/workflows/**'
   workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
   CONTAINER_PORT: 3000
-  DOCKER_BUILD_CONTEXT: .  # Changed to use root directory for multi-stage builds
+  DOCKER_BUILD_CONTEXT: .
+  DOCKERFILE_PATH: ./Dockerfile
 
 jobs:
   build-and-push:
@@ -60,21 +60,20 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
-          context: .
-          push: true
+          context: ${{ env.DOCKER_BUILD_CONTEXT }}
+          file: ${{ env.DOCKERFILE_PATH }}
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
             NODE_ENV=production
-            NPM_TOKEN=${{ secrets.NPM_TOKEN }}
           platforms: linux/amd64
           provenance: false
           load: true
           no-cache: false
           pull: true
-          shm-size: 1gb
 
   deploy:
     name: Deploy to Azure Web Apps
