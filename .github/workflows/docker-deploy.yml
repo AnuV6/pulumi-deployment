@@ -25,6 +25,9 @@ jobs:
       contents: read
       packages: write
       id-token: write
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tags: ${{ steps.meta.outputs.tags }}
 
     steps:
       - name: Checkout repository
@@ -50,9 +53,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=semver,pattern={{version}}
-            type=sha,format=long
             type=ref,event=branch
+            type=sha,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
           labels: |
             org.opencontainers.image.title=${{ github.event.repository.name }}
             org.opencontainers.image.description=Next.js application
@@ -66,11 +69,12 @@ jobs:
           cache-dependency-path: next-app/package-lock.json
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: ${{ env.DOCKER_BUILD_CONTEXT }}
           file: ${{ env.DOCKERFILE_PATH }}
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ github.workflow }}
@@ -79,8 +83,8 @@ jobs:
             NODE_ENV=production
             NODE_VERSION=${{ env.NODE_VERSION }}
           platforms: linux/amd64
-          provenance: true
-          sbom: true
+          provenance: false
+          sbom: false
 
   deploy:
     name: Deploy to Azure Web Apps
@@ -94,37 +98,72 @@ jobs:
       contents: read
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Login to Azure
-        uses: azure/login@v1
+        uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Check if Azure Web App exists
-        id: check-app-exists
-        uses: azure/CLI@v1
+      - name: Check if Frontend Azure Web App exists
+        id: check-fe-app-exists
+        continue-on-error: true
+        uses: azure/CLI@v2
         with:
-          script: |
-            az webapp show --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} || echo "::set-output name=exists::false"
-            echo "::set-output name=exists::true"
+          azcliversion: 2.53.0
+          inlineScript: |
+            if az webapp show --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} > /dev/null 2>&1; then
+              echo "fe-exists=true" >> $GITHUB_OUTPUT
+            else
+              echo "fe-exists=false" >> $GITHUB_OUTPUT
+            fi
+
+      - name: Check if Backend Azure Web App exists
+        id: check-be-app-exists
+        continue-on-error: true
+        uses: azure/CLI@v2
+        with:
+          azcliversion: 2.53.0
+          inlineScript: |
+            if az webapp show --name ${{ secrets.AZURE_WEBAPP_NAME_BE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} > /dev/null 2>&1; then
+              echo "be-exists=true" >> $GITHUB_OUTPUT
+            else
+              echo "be-exists=false" >> $GITHUB_OUTPUT
+            fi
+
+      - name: Get image tag for deployment
+        id: get-image
+        run: |
+          # Get the first tag from the metadata output
+          IMAGE_TAG=$(echo '${{ needs.build-and-push.outputs.image-tags }}' | head -n1)
+          echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "Using image: ${IMAGE_TAG}"
 
       - name: Deploy to Azure Web App for Frontend
-        if: steps.check-app-exists.outputs.exists == 'true'
+        if: steps.check-fe-app-exists.outputs.fe-exists == 'true'
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME_FE }}
-          resource-group: ${{ secrets.AZURE_RESOURCE_GROUP }}
           slot-name: 'production'
-          images: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.meta.outputs.tags }}'
-          configuration-file: './azure-app-service-config.json'
-          startup-command: 'npm start'
+          images: '${{ steps.get-image.outputs.image-tag }}'
 
       - name: Configure App Settings for Frontend
+        if: steps.check-fe-app-exists.outputs.fe-exists == 'true'
         uses: azure/appservice-settings@v1
         with:
-          app-name: ${{secrets.AZURE_WEBAPP_NAME_FE }}
+          app-name: ${{ secrets.AZURE_WEBAPP_NAME_FE }}
           mask-inputs: true
           app-settings-json: |
             [
+              {
+                "name": "WEBSITES_ENABLE_APP_SERVICE_STORAGE",
+                "value": "false"
+              },
+              {
+                "name": "WEBSITES_PORT",
+                "value": "${{ env.CONTAINER_PORT }}"
+              },
               {
                 "name": "NEXT_PUBLIC_API_URL",
                 "value": "https://${{ secrets.AZURE_WEBAPP_NAME_BE }}.azurewebsites.net"
@@ -140,23 +179,29 @@ jobs:
             ]
 
       - name: Deploy to Azure Web App for Backend
-        if: steps.check-app-exists.outputs.exists == 'true'
+        if: steps.check-be-app-exists.outputs.be-exists == 'true'
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME_BE }}
-          resource-group: ${{ secrets.AZURE_RESOURCE_GROUP }}
           slot-name: 'production'
-          images: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.meta.outputs.tags }}'
-          configuration-file: './azure-app-service-config.json'
-          startup-command: 'npm run start:backend'
+          images: '${{ steps.get-image.outputs.image-tag }}'
 
       - name: Configure App Settings for Backend
+        if: steps.check-be-app-exists.outputs.be-exists == 'true'
         uses: azure/appservice-settings@v1
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME_BE }}
           mask-inputs: true
           app-settings-json: |
             [
+              {
+                "name": "WEBSITES_ENABLE_APP_SERVICE_STORAGE",
+                "value": "false"
+              },
+              {
+                "name": "WEBSITES_PORT",
+                "value": "${{ env.CONTAINER_PORT }}"
+              },
               {
                 "name": "DATABASE_URL",
                 "value": "${{ secrets.DATABASE_URL }}"
@@ -170,3 +215,19 @@ jobs:
                 "value": "1"
               }
             ]
+
+      - name: Restart Frontend Web App
+        if: steps.check-fe-app-exists.outputs.fe-exists == 'true'
+        uses: azure/CLI@v2
+        with:
+          azcliversion: 2.53.0
+          inlineScript: |
+            az webapp restart --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }}
+
+      - name: Restart Backend Web App
+        if: steps.check-be-app-exists.outputs.be-exists == 'true'
+        uses: azure/CLI@v2
+        with:
+          azcliversion: 2.53.0
+          inlineScript: |
+            az webapp restart --name ${{ secrets.AZURE_WEBAPP_NAME_BE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }}
