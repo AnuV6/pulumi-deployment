@@ -1,8 +1,47 @@
+# Dependency directories
 node_modules
-.next/cache
-Dockerfile
+.next
+
+# Build output
+out
+build
+
+# Environment files
+.env*
+!.env.example
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local development
 .git
 .gitignore
+
+# IDE and editor files
+.vscode
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project specific
 README.md
-package-lock.json
-package.json
+Dockerfile*
+docker-compose*
+**/node_modules
+**/dist
+**/build
+**/.next

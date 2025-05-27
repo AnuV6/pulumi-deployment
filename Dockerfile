@@ -2,12 +2,20 @@
 FROM node:18-alpine AS deps
 WORKDIR /app
 
-# Copy package files
+# Copy root package files
 COPY package*.json ./
-COPY next-app/package*.json ./next-app/
 
-# Install dependencies
-RUN npm ci
+# Copy next-app package files
+WORKDIR /app/next-app
+COPY next-app/package*.json ./
+
+# Install root dependencies
+WORKDIR /app
+RUN npm install --no-package-lock
+
+# Install next-app dependencies
+WORKDIR /app/next-app
+RUN npm install --no-package-lock
 
 # Stage 2: Builder
 FROM node:18-alpine AS builder
@@ -16,14 +24,15 @@ WORKDIR /app
 # Copy all files
 COPY . .
 
-# Install dependencies from previous stage
+# Copy node_modules from deps stage
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/next-app/node_modules ./next-app/node_modules
 
 # Build Next.js app
 WORKDIR /app/next-app
 RUN npm run build
 
-# Stage 3: Production
+# Stage 3: Runner
 FROM node:18-alpine AS runner
 WORKDIR /app
 
@@ -32,19 +41,17 @@ ENV PORT=3000
 
 # Create a non-root user
 RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nextjs -u 1001 && \
-    mkdir -p /app/next-app/.next && \
-    chown -R nextjs:nodejs /app/next-app
+    adduser -S nextjs -u 1001
 
 # Copy built application
-COPY --from=builder --chown=nextjs:nodejs /app/next-app/public /app/next-app/public
-COPY --from=builder --chown=nextjs:nodejs /app/next-app/.next /app/next-app/.next
-COPY --from=builder --chown=nextjs:nodejs /app/next-app/node_modules /app/next-app/node_modules
-COPY --from=builder --chown=nextjs:nodejs /app/next-app/package.json /app/next-app/package.json
-COPY --from=builder --chown=nextjs:nodejs /app/next-app/next.config.js /app/next-app/
+COPY --from=builder --chown=nextjs:nodejs /app/next-app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/next-app/.next ./.next
+COPY --from=builder --chown=nextjs:nodejs /app/next-app/node_modules ./node_modules
+COPY --from=builder --chown=nextjs:nodejs /app/next-app/package.json .
+COPY --from=builder --chown=nextjs:nodejs /app/next-app/next.config.js .
 
-# Set working directory to next-app
-WORKDIR /app/next-app
+# Set permissions
+RUN chown -R nextjs:nodejs /app
 
 # Switch to non-root user
 USER nextjs
