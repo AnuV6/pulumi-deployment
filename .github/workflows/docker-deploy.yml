@@ -106,30 +106,29 @@ jobs:
         id: login
         uses: azure/CLI@v2
         with:
-          azcliversion: 2.53.0
+          azcliversion: latest
           inlineScript: |
-            # Completely remove any existing Azure config and cache
-            rm -rf ~/.azure/* || true
-            
-            # Login using service principal
+            rm -rf ~/.azure/*
+            rm -f ~/.azure/msal_token_cache.bin || true
+
             echo "Logging in with service principal..."
             az login --service-principal \
               -u "$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')" \
               -p "$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')" \
               --tenant "$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')" \
               --allow-no-subscriptions || { echo "Azure login failed"; exit 1; }
-            
-            # Set the subscription
+
             SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')
             az account set --subscription $SUBSCRIPTION_ID || { echo "Failed to set subscription"; exit 1; }
             echo "Successfully logged in to Azure with subscription: $(az account show --query 'name' -o tsv)"
 
-
       - name: Debug Azure Context
         uses: azure/CLI@v2
         with:
-          azcliversion: 2.53.0
+          azcliversion: latest
           inlineScript: |
+            rm -f ~/.azure/msal_token_cache.bin || true
+
             echo "Current subscription: $(az account show --query '{name:name, id:id}' -o json)"
             echo "Current tenant: $(az account show --query 'tenantId' -o tsv)"
             echo "Service principal permissions:"
@@ -138,8 +137,10 @@ jobs:
       - name: Verify Web Apps Exist
         uses: azure/CLI@v2
         with:
-          azcliversion: 2.53.0
+          azcliversion: latest
           inlineScript: |
+            rm -f ~/.azure/msal_token_cache.bin || true
+
             if ! az webapp show --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} > /dev/null 2>&1; then
               echo "Frontend web app ${{ secrets.AZURE_WEBAPP_NAME_FE }} does not exist in resource group ${{ secrets.AZURE_RESOURCE_GROUP }}."
               exit 1
@@ -164,26 +165,11 @@ jobs:
           mask-inputs: true
           app-settings-json: |
             [
-              {
-                "name": "WEBSITES_ENABLE_APP_SERVICE_STORAGE",
-                "value": "false"
-              },
-              {
-                "name": "WEBSITES_PORT",
-                "value": "${{ env.CONTAINER_PORT }}"
-              },
-              {
-                "name": "NEXT_PUBLIC_API_URL",
-                "value": "https://${{ secrets.AZURE_WEBAPP_NAME_BE }}.azurewebsites.net"
-              },
-              {
-                "name": "NODE_ENV",
-                "value": "production"
-              },
-              {
-                "name": "NEXT_TELEMETRY_DISABLED",
-                "value": "1"
-              }
+              { "name": "WEBSITES_ENABLE_APP_SERVICE_STORAGE", "value": "false" },
+              { "name": "WEBSITES_PORT", "value": "${{ env.CONTAINER_PORT }}" },
+              { "name": "NEXT_PUBLIC_API_URL", "value": "https://${{ secrets.AZURE_WEBAPP_NAME_BE }}.azurewebsites.net" },
+              { "name": "NODE_ENV", "value": "production" },
+              { "name": "NEXT_TELEMETRY_DISABLED", "value": "1" }
             ]
 
       - name: Deploy to Azure Web App for Backend
@@ -200,26 +186,11 @@ jobs:
           mask-inputs: true
           app-settings-json: |
             [
-              {
-                "name": "WEBSITES_ENABLE_APP_SERVICE_STORAGE",
-                "value": "false"
-              },
-              {
-                "name": "WEBSITES_PORT",
-                "value": "${{ env.CONTAINER_PORT }}"
-              },
-              {
-                "name": "DATABASE_URL",
-                "value": "${{ secrets.DATABASE_URL }}"
-              },
-              {
-                "name": "NODE_ENV",
-                "value": "production"
-              },
-              {
-                "name": "NEXT_TELEMETRY_DISABLED",
-                "value": "1"
-              }
+              { "name": "WEBSITES_ENABLE_APP_SERVICE_STORAGE", "value": "false" },
+              { "name": "WEBSITES_PORT", "value": "${{ env.CONTAINER_PORT }}" },
+              { "name": "DATABASE_URL", "value": "${{ secrets.DATABASE_URL }}" },
+              { "name": "NODE_ENV", "value": "production" },
+              { "name": "NEXT_TELEMETRY_DISABLED", "value": "1" }
             ]
 
       - name: Run Health Check
@@ -234,15 +205,17 @@ jobs:
       - name: Restart Frontend Web App
         uses: azure/CLI@v2
         with:
-          azcliversion: 2.53.0
+          azcliversion: latest
           inlineScript: |
+            rm -f ~/.azure/msal_token_cache.bin || true
             az webapp restart --name ${{ secrets.AZURE_WEBAPP_NAME_FE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }}
 
       - name: Restart Backend Web App
         uses: azure/CLI@v2
         with:
-          azcliversion: 2.53.0
+          azcliversion: latest
           inlineScript: |
+            rm -f ~/.azure/msal_token_cache.bin || true
             az webapp restart --name ${{ secrets.AZURE_WEBAPP_NAME_BE }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }}
 
       - name: Deployment Summary
