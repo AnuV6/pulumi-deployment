@@ -26,9 +26,9 @@ RUN ls -la node_modules/.bin/ && \
 EXPOSE 3000
 
 # Set environment variables
-ENV NODE_ENV productionENV NODE_ENV production
+ENV NODE_ENV production
 ENV PORT 3000
 
-# Use a more reliable approach with direct node command# Use a more reliable approach with direct node command
+# Use npm start to ensure proper binary resolution
 CMD ["npm", "start"]
 
