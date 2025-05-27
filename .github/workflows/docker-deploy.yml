@@ -60,8 +60,8 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
-          context: ${{ env.DOCKER_BUILD_CONTEXT }}
-          file: ${{ env.DOCKERFILE_PATH }}
+          context: ./next-app
+          file: ./next-app/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

@@ -1,17 +1,20 @@
-# Build stage
+# Use the next-app's Dockerfile
 FROM node:18-alpine AS builder
 
 # Set working directory
 WORKDIR /app
 
-# Copy package files first for better caching
+# Copy package files
 COPY next-app/package*.json ./
 
 # Install dependencies
 RUN npm install --legacy-peer-deps --no-audit --prefer-offline
 
-# Copy the rest of the application
+# Copy source code
 COPY next-app/ .
+
+# Verify files are in place
+RUN ls -la /app
 
 # Build the application
 RUN npm run build
@@ -29,6 +32,7 @@ RUN npm install --only=production --legacy-peer-deps --no-audit --prefer-offline
 # Copy built assets from builder
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
+COPY --from=builder /app/next.config.js ./
 
 # Environment variables
 ENV NODE_ENV=production

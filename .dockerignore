@@ -1,5 +1,5 @@
 # Dependency directories
-**/node_modules
+node_modules
 .next
 
 # Build output
@@ -42,13 +42,9 @@ README.md
 Dockerfile*
 docker-compose*
 **/dist
+**/build
 
-# Only include necessary files from next-app
+# Only exclude what's necessary
 next-app/.next
-next-app/node_modules
 next-app/out
-!next-app/pages
-!next-app/public
-!next-app/src
-!next-app/next.config.*
-!next-app/package*.json
+next-app/node_modules
